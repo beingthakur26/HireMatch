@@ -26,12 +26,6 @@ export function ChatAssistant({ profile }: ChatAssistantProps) {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isLoading]);
-
   const handleSend = async (e?: React.FormEvent, customInput?: string) => {
     e?.preventDefault();
     const messageText = customInput || input;
@@ -59,6 +53,33 @@ export function ChatAssistant({ profile }: ChatAssistantProps) {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    const handleApplyAI = (event: any) => {
+      const { job } = event.detail;
+      setIsOpen(true);
+      const prompt = `I want to apply for the position of "${job.title}" at "${job.company}". 
+Based on my resume, can you generate a tailored cover letter for me? 
+
+Here are the job details:
+Description: ${job.description || 'Not provided'}
+Required Skills: ${job.requiredSkills?.join(', ') || 'Not provided'}
+
+Please write a professional and compelling cover letter that highlights my matching skills and enthusiasm for the role.`;
+      
+      // Use a timeout to ensure state has settled if needed, or just call handleSend
+      setTimeout(() => handleSend(undefined, prompt), 100);
+    };
+
+    window.addEventListener("hirematch:apply-ai", handleApplyAI);
+    return () => window.removeEventListener("hirematch:apply-ai", handleApplyAI);
+  }, [profile, messages, isLoading]); // Include isLoading to avoid concurrent requests
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
 
   const quickPrompts = [
     { label: "Find React Jobs", icon: <Search className="w-3 h-3" />, prompt: "Find me some React Developer jobs or internships currently available." },

@@ -7,7 +7,8 @@ import {
   Clock, 
   Building2,
   Bookmark,
-  Share2
+  Share2,
+  X
 } from "lucide-react";
 import { Job } from "../types";
 import { timeAgo } from "../lib/utils";
@@ -18,10 +19,11 @@ interface JobCardProps {
   userSkills?: string[];
   onSave?: (job: Job) => void;
   onSelect?: (job: Job) => void;
+  onApplyWithAI?: (job: Job) => void;
   key?: string | number;
 }
 
-export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect }: JobCardProps) {
+export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect, onApplyWithAI }: JobCardProps) {
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (navigator.share) {
@@ -33,6 +35,15 @@ export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect }: Job
     } else {
       navigator.clipboard.writeText(job.sourceUrl);
       alert("Link copied to clipboard!");
+    }
+  };
+
+  const handleApplyWithAI = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onApplyWithAI) {
+      onApplyWithAI(job);
+    } else {
+      window.dispatchEvent(new CustomEvent("hirematch:apply-ai", { detail: { job } }));
     }
   };
 
@@ -51,6 +62,17 @@ export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect }: Job
       onClick={() => onSelect?.(job)}
       className="group relative bg-white dark:bg-zinc-900 rounded-xl p-6 border border-slate-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-200 shadow-sm flex flex-col h-full cursor-pointer"
     >
+      {/* AI Apply Quick Action */}
+      <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button 
+          onClick={handleApplyWithAI}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg hover:bg-blue-700 transition-all hover:scale-105 active:scale-95"
+        >
+          <Sparkles className="w-3 h-3" />
+          Apply with AI
+        </button>
+      </div>
+
       {/* AI Score Badge - Professional Header Style */}
       {job.matchScore !== undefined && (
         <div className="flex justify-between items-start mb-4">
@@ -117,9 +139,10 @@ export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect }: Job
                 className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border
                   ${matched 
                     ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
-                    : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400'}`}
+                    : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50 text-amber-700 dark:text-amber-400'}`}
               >
                 {matched && <Sparkles className="inline-block w-2 h-2 mr-1 animate-pulse" />}
+                {!matched && <X className="inline-block w-2 h-2 mr-1 opacity-50" />}
                 {skill}
               </span>
             );

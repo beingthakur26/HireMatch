@@ -28,15 +28,25 @@ interface JobDetailModalProps {
   isOpen: boolean;
   isSaved?: boolean;
   onSave?: (job: Job) => void;
+  onApplyWithAI?: (job: Job) => void;
   onClose: () => void;
 }
 
-export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, onSave, onClose }: JobDetailModalProps) {
+export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, onSave, onClose, onApplyWithAI }: JobDetailModalProps) {
   const [coverLetter, setCoverLetter] = useState<string | null>(null);
   const [improvements, setImprovements] = useState<any>(null);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
 
   if (!job) return null;
+
+  const handleApplyWithAI = () => {
+    if (onApplyWithAI) {
+      onApplyWithAI(job);
+    } else {
+      window.dispatchEvent(new CustomEvent("hirematch:apply-ai", { detail: { job } }));
+    }
+    onClose();
+  };
 
   const scoreColor = job.matchScore 
     ? job.matchScore >= 80 ? "emerald" 
@@ -222,6 +232,13 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
                       <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">AI Tools</h3>
                       <div className="grid grid-cols-1 gap-2">
                         <button 
+                          onClick={handleApplyWithAI}
+                          className="flex items-center gap-3 p-3 bg-blue-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-md shadow-blue-600/20"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          Apply with AI
+                        </button>
+                        <button 
                           onClick={handleGenerateCoverLetter}
                           disabled={isLoadingAI || !resume}
                           className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
@@ -256,16 +273,18 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
                                 className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all
                                   ${matched 
                                     ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20 scale-105' 
-                                    : 'bg-white dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300'}`}
+                                    : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50 text-amber-700 dark:text-amber-400'}`}
                               >
                                 {matched ? (
                                   <ShieldCheck className="w-4 h-4 text-white" />
                                 ) : (
-                                  <Zap className="w-3.5 h-3.5 text-slate-300" />
+                                  <X className="w-3.5 h-3.5 text-amber-500" />
                                 )}
                                 <span className="text-xs font-bold tracking-tight">{skill}</span>
-                                {matched && (
-                                  <span className="ml-1 px-1.5 py-0.5 bg-blue-500 text-[8px] uppercase font-black rounded-md">Matched</span>
+                                {matched ? (
+                                  <span className="ml-1 px-1.5 py-0.5 bg-blue-500 text-[8px] uppercase font-black rounded-md text-white">Matched</span>
+                                ) : (
+                                  <span className="ml-1 px-1.5 py-0.5 bg-amber-200 dark:bg-amber-800 text-[8px] uppercase font-black rounded-md text-amber-800 dark:text-amber-200">Missing</span>
                                 )}
                               </div>
                             );
@@ -388,15 +407,24 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Platform: {job.source}</span>
                     </div>
                   </div>
-                  <a 
-                    href={job.sourceUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="w-full sm:w-auto px-12 py-4 bg-slate-900 hover:bg-black text-white font-bold uppercase tracking-widest text-[11px] rounded shadow-xl transition-all flex items-center justify-center gap-3"
-                  >
-                    Proceed to Application
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <button 
+                      onClick={handleApplyWithAI}
+                      className="flex-1 sm:flex-none px-6 py-4 bg-white border border-slate-200 text-blue-600 font-bold uppercase tracking-widest text-[11px] rounded shadow-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Apply with AI
+                    </button>
+                    <a 
+                      href={job.sourceUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex-1 sm:flex-none px-12 py-4 bg-slate-900 hover:bg-black text-white font-bold uppercase tracking-widest text-[11px] rounded shadow-xl transition-all flex items-center justify-center gap-3"
+                    >
+                      Proceed to Application
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
                 </div>
               </div>
             </motion.div>

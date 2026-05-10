@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "UserExperience": {
+      "title": "User Experience",
+      "description": "Professional experience entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "company": { "type": "string" },
+        "role": { "type": "string" },
+        "period": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "company", "role"]
+    },
+    "UserEducation": {
+      "title": "User Education",
+      "description": "Educational background entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "institution": { "type": "string" },
+        "degree": { "type": "string" },
+        "year": { "type": "string" }
+      },
+      "required": ["id", "institution", "degree"]
+    },
+    "ParsedResume": {
+      "title": "Parsed Resume",
+      "description": "Extracted data from a resume PDF",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "summary": { "type": "string" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "totalExperienceYears": { "type": "number" },
+        "inferredDomain": { "type": "string" }
+      }
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Main user profile document",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "about": { "type": "string" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "experience": { "type": "array", "items": { "$ref": "#/entities/UserExperience" } },
+        "education": { "type": "array", "items": { "$ref": "#/entities/UserEducation" } },
+        "profilePicture": { "type": "string" },
+        "resume": { "$ref": "#/entities/ParsedResume" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email"]
+    },
+    "Job": {
+      "title": "Job",
+      "description": "Job posting details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "externalId": { "type": "string" },
+        "source": { "type": "string" },
+        "sourceUrl": { "type": "string" },
+        "title": { "type": "string" },
+        "company": { "type": "string" },
+        "companyLogo": { "type": "string" },
+        "location": { "type": "string" },
+        "salary": { "type": "object" },
+        "postedAt": { "type": "string" },
+        "matchScore": { "type": "number" },
+        "savedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "JobAlert": {
+      "title": "Job Alert",
+      "description": "User notification alert for jobs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "keywords": { "type": "string" },
+        "location": { "type": "string" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "instant"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profile information"
+    },
+    "/users/{userId}/savedJobs/{jobId}": {
+      "schema": "Job",
+      "description": "Stores jobs saved by the user"
+    },
+    "/users/{userId}/jobAlerts/{alertId}": {
+      "schema": "JobAlert",
+      "description": "Stores job alerts configured by the user"
+    }
+  }
+}

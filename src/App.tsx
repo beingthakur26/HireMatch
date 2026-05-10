@@ -19,9 +19,13 @@ import {
   Filter,
   Bookmark,
   Sun,
-  Moon
+  Moon,
+  LogIn
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { doc, onSnapshot, setDoc, updateDoc, collection, query, serverTimestamp, deleteDoc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth, db, loginWithGoogle, logout, OperationType, handleFirestoreError } from "./lib/firebase";
 import { Job, ParsedResume, JobAlert, UserProfile } from "./types";
 import { jobApi } from "./services/api";
 import { geminiService } from "./services/geminiService";
@@ -32,52 +36,26 @@ import { JobAlerts } from "./components/JobAlerts";
 import { ResumeFeedback } from "./components/ResumeFeedback";
 import { ChatAssistant } from "./components/ChatAssistant";
 import { ProfilePage } from "./components/ProfilePage";
+import { LandingPage } from "./components/LandingPage";
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("discovery");
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [profile, setProfile] = useState<UserProfile>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('user_profile');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          ...parsed,
-          experience: parsed.experience || [],
-          education: parsed.education || [],
-          skills: parsed.skills || []
-        };
-      }
-    }
-    return {
-      name: "Manas Singh",
-      title: "Senior Software Engineer",
-      email: "manas@example.com",
-      phone: "+91 9876543210",
-      about: "Passionate software engineer focused on building AI-driven solutions.",
-      skills: ["React", "TypeScript", "Node.js", "AI Integration"],
-      experience: [
-        { id: '1', company: 'Tech Corp', role: 'Full Stack Engineer', period: '2022 - Present', description: 'Leading development of cloud-native applications.' }
-      ],
-      education: [
-        { id: '1', institution: 'University of Tech', degree: 'B.S. Computer Science', year: '2022' }
-      ],
-      profilePicture: undefined,
-      resume: undefined
-    };
+
+  const [profile, setProfile] = useState<UserProfile>({
+    name: "User Name",
+    title: "",
+    email: "",
+    phone: "",
+    about: "",
+    skills: [],
+    experience: [],
+    education: [],
   });
   
   const [resume, setResume] = useState<ParsedResume | null>(null);
-
-  useEffect(() => {
-    if (profile.resume) {
-      setResume(profile.resume);
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('user_profile', JSON.stringify(profile));
-  }, [profile]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,11 +64,188 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [alerts, setAlerts] = useState<JobAlert[]>([]);
+
+  // Auth Effect
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Data Syncing Effect
+  useEffect(() => {
+    if (!user) {
+      setProfile({
+        name: "User Name",
+        title: "",
+        email: "",
+        phone: "",
+        about: "",
+        skills: [],
+        experience: [],
+        education: [],
+      });
+      setSavedJobs([]);
+      setAlerts([]);
+      return;
+    }
+
+    const userId = user.uid;
+
+    // Sync Profile
+    const profileRef = doc(db, "users", userId);
+    const unsubProfile = onSnapshot(profileRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as UserProfile;
+        setProfile(data);
+        if (data.resume) setResume(data.resume);
+      } else {
+        // Init profile if new user
+        const initialProfile: UserProfile = {
+          name: user.displayName || "User Name",
+          email: user.email || "",
+          userId: userId,
+          title: "",
+          phone: "",
+          about: "",
+          skills: [],
+          experience: [],
+          education: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setDoc(profileRef, initialProfile).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}`));
+      }
+    }, (e) => handleFirestoreError(e, OperationType.GET, `users/${userId}`));
+
+    // Sync Saved Jobs
+    const savedJobsRef = collection(db, "users", userId, "savedJobs");
+    const unsubSaved = onSnapshot(savedJobsRef, (snap) => {
+      const jobsList = snap.docs.map(d => d.data() as Job);
+      setSavedJobs(jobsList);
+    }, (e) => handleFirestoreError(e, OperationType.LIST, `users/${userId}/savedJobs`));
+
+    // Sync Alerts
+    const alertsRef = collection(db, "users", userId, "jobAlerts");
+    const unsubAlerts = onSnapshot(alertsRef, (snap) => {
+      const alertsList = snap.docs.map(d => d.data() as JobAlert);
+      setAlerts(alertsList);
+    }, (e) => handleFirestoreError(e, OperationType.LIST, `users/${userId}/jobAlerts`));
+
+    return () => {
+      unsubProfile();
+      unsubSaved();
+      unsubAlerts();
+    };
+  }, [user]);
+
+  const handleLogin = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  const toggleSaveJob = async (job: Job) => {
+    if (!user || !job.id) return;
+    const userId = user.uid;
+    const jobRef = doc(db, "users", userId, "savedJobs", job.id);
+    
+    const isSaved = savedJobs.some(j => j.id === job.id);
+    try {
+      if (isSaved) {
+        await deleteDoc(jobRef);
+      } else {
+        await setDoc(jobRef, { ...job, savedAt: new Date().toISOString() });
+      }
+    } catch (e) {
+      handleFirestoreError(e, isSaved ? OperationType.DELETE : OperationType.CREATE, `users/${userId}/savedJobs/${job.id}`);
+    }
+  };
+
+  const handleCreateAlert = async (alertData: Omit<JobAlert, "id" | "createdAt" | "isActive">) => {
+    if (!user) return;
+    try {
+      const userId = user.uid;
+      const alertId = crypto.randomUUID();
+      const alertRef = doc(db, "users", userId, "jobAlerts", alertId);
+      const newAlert = {
+        ...alertData,
+        id: alertId,
+        createdAt: new Date().toISOString(),
+        isActive: true
+      };
+      await setDoc(alertRef, newAlert);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/jobAlerts`);
+    }
+  };
+
+  const handleDeleteAlert = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, "users", user.uid, "jobAlerts", id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/jobAlerts/${id}`);
+    }
+  };
+
+  const handleToggleAlert = async (id: string) => {
+    if (!user) return;
+    const alert = alerts.find(a => a.id === id);
+    if (!alert) return;
+    try {
+      await updateDoc(doc(db, "users", user.uid, "jobAlerts", id), {
+        isActive: !alert.isActive
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/jobAlerts/${id}`);
+    }
+  };
+
+  const handleResumeUpload = async (parsed: ParsedResume) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        resume: parsed,
+        updatedAt: new Date().toISOString()
+      });
+      setActiveTab("discovery");
+      fetchJobs(parsed.inferredDomain || parsed.skills[0] || "Software Engineer", "");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const updateProfile = async (newProfile: UserProfile) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        ...newProfile,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('theme');
       if (saved) return saved === 'dark';
-      // Default to light mode (false) if no saved preference
       return false;
     }
     return false;
@@ -105,48 +260,6 @@ export default function App() {
       localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
-
-  const toggleSaveJob = (job: Job) => {
-    setSavedJobs(prev => {
-      const isSaved = prev.some(j => j.id === job.id);
-      if (isSaved) {
-        return prev.filter(j => j.id !== job.id);
-      } else {
-        return [...prev, job];
-      }
-    });
-  };
-
-  const handleCreateAlert = async (alertData: Omit<JobAlert, "id" | "createdAt" | "isActive">) => {
-    try {
-      const serverId = await jobApi.createAlert(alertData);
-      const newAlert: JobAlert = {
-        ...alertData,
-        id: serverId,
-        createdAt: new Date().toISOString(),
-        isActive: true
-      };
-      setAlerts(prev => [newAlert, ...prev]);
-    } catch (error) {
-      console.error("Failed to create alert:", error);
-    }
-  };
-
-  const handleDeleteAlert = (id: string) => {
-    setAlerts(alerts.filter(a => a.id !== id));
-  };
-
-  const handleToggleAlert = (id: string) => {
-    setAlerts(alerts.map(a => a.id === id ? { ...a, isActive: !a.isActive } : a));
-  };
-
-  const handleResumeUpload = async (parsed: ParsedResume) => {
-    setProfile(prev => ({ ...prev, resume: parsed }));
-    setResume(parsed);
-    setActiveTab("discovery");
-    // Initial search based on resume
-    fetchJobs(parsed.inferredDomain || parsed.skills[0] || "Software Engineer", "");
-  };
 
   const fetchJobs = async (query: string, loc: string) => {
     setLoading(true);
@@ -183,6 +296,21 @@ export default function App() {
     e.preventDefault();
     fetchJobs(searchQuery, location);
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-zinc-950 font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin shadow-lg shadow-blue-500/20" />
+          <p className="text-sm font-bold text-slate-400 uppercase tracking-widest animate-pulse">Initializing AI Matcher...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LandingPage onLogin={handleLogin} />;
+  }
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] dark:bg-zinc-950 overflow-hidden font-sans">
@@ -244,14 +372,23 @@ export default function App() {
             </nav>
 
             <div className="p-6 border-t border-slate-100 dark:border-zinc-800">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-600">
-                  {profile.profilePicture ? <img src={profile.profilePicture} className="w-full h-full object-cover" /> : "MA"}
+              <div className="flex items-center justify-between gap-3 group">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-600">
+                    {profile.profilePicture ? <img src={profile.profilePicture} className="w-full h-full object-cover" /> : "MA"}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-zinc-200">{profile.name || "User Name"}</p>
+                    <p className="text-[10px] text-slate-500 uppercase">Pro Member</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-800 dark:text-zinc-200">{profile.name || "User Name"}</p>
-                  <p className="text-[10px] text-slate-500 uppercase">Pro Member</p>
-                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all"
+                  title="Logout"
+                >
+                  <LogIn className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </motion.aside>
@@ -298,7 +435,7 @@ export default function App() {
           {activeTab === "profile" ? (
             <ProfilePage 
               profile={profile} 
-              onUpdateProfile={setProfile} 
+              onUpdateProfile={updateProfile} 
               onResumeParsed={handleResumeUpload} 
             />
           ) : activeTab === "saved" ? (

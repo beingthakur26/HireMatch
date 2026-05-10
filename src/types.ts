@@ -89,6 +89,7 @@ export interface UserEducation {
 }
 
 export interface UserProfile {
+  userId: string;
   name: string;
   title: string;
   email: string;
@@ -99,4 +100,6 @@ export interface UserProfile {
   education: UserEducation[];
   profilePicture?: string;
   resume?: ParsedResume;
+  createdAt: string;
+  updatedAt: string;
 }
