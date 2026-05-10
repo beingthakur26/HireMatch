@@ -18,5 +18,10 @@ export const jobApi = {
   async searchJobs(query: string, location?: string, jobType?: string): Promise<Job[]> {
     const response = await api.post("/jobs/search", { query, location, jobType });
     return response.data.jobs;
+  },
+
+  async createAlert(alertData: { keywords: string; location: string; frequency: string }): Promise<string> {
+    const response = await api.post("/alerts", alertData);
+    return response.data.id;
   }
 };

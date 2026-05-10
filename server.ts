@@ -64,33 +64,57 @@ async function startServer() {
     try {
       if (!req.file) return res.status(400).json({ error: "No file" });
       
-      // Robust loading for pdf-parse which can be tricky in ESM/TSX
-      let pdfParser = require("pdf-parse");
+      console.log(`📄 Extracting PDF: ${req.file.originalname} (${req.file.size} bytes)`);
       
-      // Fallback strategies for different packaging
-      let pdf = typeof pdfParser === "function" ? pdfParser : pdfParser.default;
+      // Load pdf-parse (classic version)
+      let pdfParser;
+      try {
+        pdfParser = require("pdf-parse");
+      } catch (e) {
+        console.log("Standard require failed, trying dynamic import...");
+        const mod = await import("pdf-parse");
+        pdfParser = mod.default || mod;
+      }
       
-      if (typeof pdf !== "function") {
-        console.log("pdfParser is not a function, trying internal path...");
-        try {
-          const internal = require("pdf-parse/lib/pdf-parse.js");
-          pdf = typeof internal === "function" ? internal : internal.default;
-        } catch (e) {
-          console.error("Failed to load internal pdf-parse:", e);
+      if (typeof pdfParser !== "function") {
+        // Handle cases where the import might be nested
+        if (pdfParser.default && typeof pdfParser.default === "function") {
+          pdfParser = pdfParser.default;
+        } else if (pdfParser.pdf && typeof pdfParser.pdf === "function") {
+          pdfParser = pdfParser.pdf;
+        } else {
+          throw new Error("PDF Parser could not be initialized as a function.");
         }
       }
 
-      if (typeof pdf !== "function") {
-        console.error("Final check: pdf is still not a function. pdfParser is:", typeof pdfParser);
-        throw new Error("pdf-parse could not be loaded as a function.");
+      console.log("🚀 Starting PDF Extraction...");
+      const data = await pdfParser(req.file.buffer);
+      
+      if (!data || !data.text) {
+        throw new Error("PDF parsing returned empty content.");
+      }
+      if (!data || !data.text) {
+        throw new Error("PDF parsing returned empty content.");
       }
 
-      const data = await pdf(req.file.buffer);
+      console.log(`✅ Extraction successful: ${data.text.length} characters`);
       res.json({ text: data.text });
-    } catch (e) {
+    } catch (e: any) {
       console.error("Extraction failed:", e);
-      res.status(500).json({ error: "Failed to extract text" });
+      res.status(500).json({ 
+        error: "Failed to extract text from PDF", 
+        details: e.message,
+        stack: process.env.NODE_ENV !== 'production' ? e.stack : undefined
+      });
     }
+  });
+
+  // Job Alerts Endpoints
+  app.post("/api/alerts", (req, res) => {
+    const { keywords, location, frequency } = req.body;
+    console.log(`Setting up job alert: ${keywords} @ ${location} [${frequency}]`);
+    // In a real app, we'd save this to a database and start a worker
+    res.json({ success: true, id: `alert-${Date.now()}` });
   });
 
   // Vite Middleware

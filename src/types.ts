@@ -33,6 +33,8 @@ export interface ParsedResume {
     company: string;
     role: string;
     duration: string;
+    startDate?: string;
+    endDate?: string;
     description: string;
     technologies: string[];
   }[];
@@ -52,4 +54,49 @@ export interface ParsedResume {
   totalExperienceYears: number;
   inferredSeniority?: string;
   inferredDomain?: string;
+  parsingMetadata?: {
+    warnings: string[];
+    sectionsQuality: {
+      section: string;
+      score: number; // 0-100
+      missingInfo: string[];
+    }[];
+  };
+}
+
+export interface JobAlert {
+  id: string;
+  keywords: string;
+  location: string;
+  frequency: "daily" | "weekly" | "instant";
+  createdAt: string;
+  isActive: boolean;
+}
+
+export interface UserExperience {
+  id: string;
+  company: string;
+  role: string;
+  period: string;
+  description: string;
+}
+
+export interface UserEducation {
+  id: string;
+  institution: string;
+  degree: string;
+  year: string;
+}
+
+export interface UserProfile {
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  about: string;
+  skills: string[];
+  experience: UserExperience[];
+  education: UserEducation[];
+  profilePicture?: string;
+  resume?: ParsedResume;
 }

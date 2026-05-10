@@ -15,12 +15,13 @@ import { timeAgo } from "../lib/utils";
 interface JobCardProps {
   job: Job;
   isSaved?: boolean;
+  userSkills?: string[];
   onSave?: (job: Job) => void;
   onSelect?: (job: Job) => void;
   key?: string | number;
 }
 
-export function JobCard({ job, isSaved, onSave, onSelect }: JobCardProps) {
+export function JobCard({ job, isSaved, userSkills = [], onSave, onSelect }: JobCardProps) {
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (navigator.share) {
@@ -40,6 +41,10 @@ export function JobCard({ job, isSaved, onSave, onSelect }: JobCardProps) {
     : job.matchScore >= 60 ? "blue" 
     : "slate"
     : "slate";
+
+  const isMatch = (skill: string) => {
+    return userSkills.some(s => s.toLowerCase() === skill.toLowerCase());
+  };
 
   return (
     <div 
@@ -84,7 +89,7 @@ export function JobCard({ job, isSaved, onSave, onSelect }: JobCardProps) {
       </div>
 
       {/* Meta Grid */}
-      <div className="grid grid-cols-2 gap-y-3 mb-6 pb-6 border-b border-slate-100 dark:border-zinc-800">
+      <div className="grid grid-cols-2 gap-y-3 mb-4 pb-4 border-b border-slate-100 dark:border-zinc-800">
         <div>
           <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Region</p>
           <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-zinc-300">
@@ -100,6 +105,30 @@ export function JobCard({ job, isSaved, onSave, onSelect }: JobCardProps) {
           </div>
         </div>
       </div>
+
+      {/* Skills Tags */}
+      {job.requiredSkills && job.requiredSkills.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-6">
+          {job.requiredSkills.slice(0, 4).map((skill) => {
+            const matched = isMatch(skill);
+            return (
+              <span 
+                key={skill} 
+                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border
+                  ${matched 
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
+                    : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400'}`}
+              >
+                {matched && <Sparkles className="inline-block w-2 h-2 mr-1 animate-pulse" />}
+                {skill}
+              </span>
+            );
+          })}
+          {job.requiredSkills.length > 4 && (
+            <span className="text-[10px] text-slate-400 font-bold self-center">+{job.requiredSkills.length - 4} more</span>
+          )}
+        </div>
+      )}
 
       <div className="mt-auto flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase">

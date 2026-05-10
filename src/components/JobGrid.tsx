@@ -9,9 +9,10 @@ interface JobGridProps {
   onSaveJob?: (job: Job) => void;
   onSelectJob?: (job: Job) => void;
   savedJobIds?: string[];
+  userSkills?: string[];
 }
 
-export function JobGrid({ jobs, isLoading, onSaveJob, onSelectJob, savedJobIds = [] }: JobGridProps) {
+export function JobGrid({ jobs, isLoading, onSaveJob, onSelectJob, savedJobIds = [], userSkills = [] }: JobGridProps) {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -42,6 +43,7 @@ export function JobGrid({ jobs, isLoading, onSaveJob, onSelectJob, savedJobIds =
           key={job.id} 
           job={job} 
           isSaved={savedJobIds.includes(job.id || "")}
+          userSkills={userSkills}
           onSave={onSaveJob} 
           onSelect={onSelectJob}
         />

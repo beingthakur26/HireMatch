@@ -17,20 +17,67 @@ import {
   X,
   PlusCircle,
   Filter,
-  Bookmark
+  Bookmark,
+  Sun,
+  Moon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Job, ParsedResume } from "./types";
+import { Job, ParsedResume, JobAlert, UserProfile } from "./types";
 import { jobApi } from "./services/api";
 import { geminiService } from "./services/geminiService";
 import { ResumeUploader } from "./components/ResumeUploader";
 import { JobGrid } from "./components/JobGrid";
 import { JobDetailModal } from "./components/JobDetailModal";
+import { JobAlerts } from "./components/JobAlerts";
+import { ResumeFeedback } from "./components/ResumeFeedback";
+import { ChatAssistant } from "./components/ChatAssistant";
+import { ProfilePage } from "./components/ProfilePage";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("discovery");
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [profile, setProfile] = useState<UserProfile>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('user_profile');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...parsed,
+          experience: parsed.experience || [],
+          education: parsed.education || [],
+          skills: parsed.skills || []
+        };
+      }
+    }
+    return {
+      name: "Manas Singh",
+      title: "Senior Software Engineer",
+      email: "manas@example.com",
+      phone: "+91 9876543210",
+      about: "Passionate software engineer focused on building AI-driven solutions.",
+      skills: ["React", "TypeScript", "Node.js", "AI Integration"],
+      experience: [
+        { id: '1', company: 'Tech Corp', role: 'Full Stack Engineer', period: '2022 - Present', description: 'Leading development of cloud-native applications.' }
+      ],
+      education: [
+        { id: '1', institution: 'University of Tech', degree: 'B.S. Computer Science', year: '2022' }
+      ],
+      profilePicture: undefined,
+      resume: undefined
+    };
+  });
+  
   const [resume, setResume] = useState<ParsedResume | null>(null);
+
+  useEffect(() => {
+    if (profile.resume) {
+      setResume(profile.resume);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('user_profile', JSON.stringify(profile));
+  }, [profile]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,6 +85,26 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
+  const [alerts, setAlerts] = useState<JobAlert[]>([]);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('theme');
+      if (saved) return saved === 'dark';
+      // Default to light mode (false) if no saved preference
+      return false;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   const toggleSaveJob = (job: Job) => {
     setSavedJobs(prev => {
@@ -50,7 +117,31 @@ export default function App() {
     });
   };
 
+  const handleCreateAlert = async (alertData: Omit<JobAlert, "id" | "createdAt" | "isActive">) => {
+    try {
+      const serverId = await jobApi.createAlert(alertData);
+      const newAlert: JobAlert = {
+        ...alertData,
+        id: serverId,
+        createdAt: new Date().toISOString(),
+        isActive: true
+      };
+      setAlerts(prev => [newAlert, ...prev]);
+    } catch (error) {
+      console.error("Failed to create alert:", error);
+    }
+  };
+
+  const handleDeleteAlert = (id: string) => {
+    setAlerts(alerts.filter(a => a.id !== id));
+  };
+
+  const handleToggleAlert = (id: string) => {
+    setAlerts(alerts.map(a => a.id === id ? { ...a, isActive: !a.isActive } : a));
+  };
+
   const handleResumeUpload = async (parsed: ParsedResume) => {
+    setProfile(prev => ({ ...prev, resume: parsed }));
     setResume(parsed);
     setActiveTab("discovery");
     // Initial search based on resume
@@ -128,9 +219,9 @@ export default function App() {
               />
               <NavItem 
                 icon={<FileUser className="w-4 h-4" />} 
-                label="My Resume" 
-                active={activeTab === "resume"} 
-                onClick={() => setActiveTab("resume")}
+                label="My Profile" 
+                active={activeTab === "profile"} 
+                onClick={() => setActiveTab("profile")}
               />
               <NavItem 
                 icon={<History className="w-4 h-4" />} 
@@ -144,15 +235,21 @@ export default function App() {
                 active={activeTab === "saved"} 
                 onClick={() => setActiveTab("saved")}
               />
+              <NavItem 
+                icon={<Bell className="w-4 h-4" />} 
+                label="Job Alerts" 
+                active={activeTab === "alerts"} 
+                onClick={() => setActiveTab("alerts")}
+              />
             </nav>
 
             <div className="p-6 border-t border-slate-100 dark:border-zinc-800">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 flex items-center justify-center text-xs font-bold text-slate-600">
-                  MA
+                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-600">
+                  {profile.profilePicture ? <img src={profile.profilePicture} className="w-full h-full object-cover" /> : "MA"}
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-800 dark:text-zinc-200">Manas Singh</p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-zinc-200">{profile.name || "User Name"}</p>
                   <p className="text-[10px] text-slate-500 uppercase">Pro Member</p>
                 </div>
               </div>
@@ -176,12 +273,19 @@ export default function App() {
               <span className="text-slate-400">HireMatch AI</span>
               <span className="text-slate-300">/</span>
               <span className="text-slate-700 dark:text-zinc-200">
-                {activeTab === "discovery" ? "Discovery" : activeTab === "resume" ? "Resume" : activeTab === "saved" ? "Saved" : "Applications"}
+                {activeTab === "discovery" ? "Discovery" : activeTab === "profile" ? "Profile" : activeTab === "saved" ? "Saved" : activeTab === "alerts" ? "Alerts" : "Applications"}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 hover:bg-slate-50 dark:hover:bg-zinc-800 rounded-md transition-colors text-slate-500"
+              title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
             <span className="pro-badge bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">System Ready</span>
             <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md shadow-sm transition-colors">
               Refresh Jobs
@@ -191,59 +295,12 @@ export default function App() {
 
         {/* Scrollable Area */}
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
-          {activeTab === "resume" ? (
-            <section className="max-w-4xl mx-auto py-6">
-              <header className="mb-10">
-                <h1 className="text-3xl font-extrabold text-slate-900 dark:text-zinc-100 tracking-tight mb-2">
-                  Talent Profile
-                </h1>
-                <p className="text-slate-500 dark:text-zinc-400 text-sm">
-                  Strategic analysis and optimization of your professional documents.
-                </p>
-              </header>
-              
-              <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-8 shadow-sm">
-                <ResumeUploader onUploadComplete={handleResumeUpload} />
-              </div>
-
-              {resume && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-12 bg-white dark:bg-zinc-900 rounded-xl p-8 border border-slate-200 dark:border-zinc-800 shadow-sm"
-                >
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 pb-6 border-b border-slate-100 dark:border-zinc-800">
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 mb-1">{resume.name}</h2>
-                      <p className="text-blue-600 dark:text-blue-400 text-sm font-bold uppercase tracking-widest">{resume.inferredDomain} • {resume.inferredSeniority}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Match Potential</p>
-                      <p className="text-3xl font-light text-blue-600">Expert</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                    <div className="md:col-span-2">
-                       <h3 className="text-[11px] font-bold text-slate-400 uppercase mb-4 tracking-wider">Professional Profile</h3>
-                       <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed font-medium">
-                        "{resume.summary}"
-                      </p>
-                    </div>
-                    <div>
-                      <h3 className="text-[11px] font-bold text-slate-400 uppercase mb-4 tracking-wider">Core Capabilities</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {resume.skills.map(skill => (
-                          <span key={skill} className="px-2.5 py-1 bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 rounded text-xs font-semibold border border-slate-200/60 dark:border-zinc-700">
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </section>
+          {activeTab === "profile" ? (
+            <ProfilePage 
+              profile={profile} 
+              onUpdateProfile={setProfile} 
+              onResumeParsed={handleResumeUpload} 
+            />
           ) : activeTab === "saved" ? (
             <div className="max-w-7xl mx-auto space-y-8">
               <header>
@@ -259,11 +316,21 @@ export default function App() {
                 jobs={savedJobs} 
                 isLoading={false} 
                 savedJobIds={savedJobs.map(j => j.id || "")}
+                userSkills={resume?.skills || []}
                 onSaveJob={toggleSaveJob}
                 onSelectJob={(job) => {
                   setSelectedJob(job);
                   setIsModalOpen(true);
                 }}
+              />
+            </div>
+          ) : activeTab === "alerts" ? (
+            <div className="max-w-7xl mx-auto">
+              <JobAlerts 
+                alerts={alerts}
+                onCreateAlert={handleCreateAlert}
+                onDeleteAlert={handleDeleteAlert}
+                onToggleAlert={handleToggleAlert}
               />
             </div>
           ) : (
@@ -322,6 +389,7 @@ export default function App() {
                 jobs={jobs} 
                 isLoading={isLoading} 
                 savedJobIds={savedJobs.map(j => j.id || "")}
+                userSkills={resume?.skills || []}
                 onSaveJob={toggleSaveJob}
                 onSelectJob={(job) => {
                   setSelectedJob(job);
@@ -336,11 +404,14 @@ export default function App() {
       <JobDetailModal 
         job={selectedJob} 
         resume={resume}
+        userSkills={resume?.skills || []}
         isOpen={isModalOpen} 
         isSaved={selectedJob ? savedJobs.some(j => j.id === selectedJob.id) : false}
         onSave={() => selectedJob && toggleSaveJob(selectedJob)}
         onClose={() => setIsModalOpen(false)} 
       />
+
+      <ChatAssistant profile={profile} />
     </div>
   );
 }
