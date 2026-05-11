@@ -20,13 +20,16 @@ import {
   Bookmark,
   Sun,
   Moon,
-  LogIn
+  LogIn,
+  Target,
+  Zap
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { doc, onSnapshot, setDoc, updateDoc, collection, query, serverTimestamp, deleteDoc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, db, loginWithGoogle, logout, OperationType, handleFirestoreError } from "./lib/firebase";
-import { Job, ParsedResume, JobAlert, UserProfile } from "./types";
+import { Toaster, toast } from "react-hot-toast";
+import { Job, ParsedResume, JobAlert, UserProfile, InterviewSession } from "./types";
 import { jobApi } from "./services/api";
 import { geminiService } from "./services/geminiService";
 import { ResumeUploader } from "./components/ResumeUploader";
@@ -37,6 +40,7 @@ import { ResumeFeedback } from "./components/ResumeFeedback";
 import { ChatAssistant } from "./components/ChatAssistant";
 import { ProfilePage } from "./components/ProfilePage";
 import { LandingPage } from "./components/LandingPage";
+import { MockInterviewRoom } from "./components/MockInterviewRoom";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,6 +57,12 @@ export default function App() {
     skills: [],
     experience: [],
     education: [],
+    credits: {
+      balance: 10,
+      totalEarned: 10,
+      lastRefillDate: new Date().toISOString(),
+      transactions: [],
+    }
   });
   
   const [resume, setResume] = useState<ParsedResume | null>(null);
@@ -61,9 +71,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [location, setLocation] = useState("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [interviewJob, setInterviewJob] = useState<Job | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [alerts, setAlerts] = useState<JobAlert[]>([]);
+  const [interviews, setInterviews] = useState<InterviewSession[]>([]);
 
   // Auth Effect
   useEffect(() => {
@@ -77,16 +89,22 @@ export default function App() {
   // Data Syncing Effect
   useEffect(() => {
     if (!user) {
-      setProfile({
-        name: "User Name",
-        title: "",
-        email: "",
-        phone: "",
-        about: "",
-        skills: [],
-        experience: [],
-        education: [],
-      });
+        setProfile({
+          name: "User Name",
+          title: "",
+          email: "",
+          phone: "",
+          about: "",
+          skills: [],
+          experience: [],
+          education: [],
+          credits: {
+            balance: 10,
+            totalEarned: 10,
+            lastRefillDate: new Date().toISOString(),
+            transactions: [],
+          }
+        });
       setSavedJobs([]);
       setAlerts([]);
       return;
@@ -101,6 +119,34 @@ export default function App() {
         const data = docSnap.data() as UserProfile;
         setProfile(data);
         if (data.resume) setResume(data.resume);
+
+        // Daily Credit Refill check
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const lastRefill = data.credits?.lastRefillDate ? new Date(data.credits.lastRefillDate) : new Date(0);
+        
+        if (lastRefill < today) {
+          const refillAmount = 10; // Free tier refill
+          const updatedCredits = {
+            ...data.credits,
+            balance: Math.max(data.credits?.balance || 0, refillAmount),
+            lastRefillDate: today.toISOString(),
+            transactions: [
+              ...(data.credits?.transactions || []),
+              {
+                id: crypto.randomUUID(),
+                type: "earned",
+                amount: refillAmount,
+                reason: "Daily login refill",
+                createdAt: new Date().toISOString()
+              }
+            ].slice(-20) // Keep last 20
+          };
+          updateDoc(profileRef, { 
+            credits: updatedCredits,
+            updatedAt: new Date().toISOString()
+          }).catch(e => console.error("Failed to refill credits:", e));
+        }
       } else {
         // Init profile if new user
         const initialProfile: UserProfile = {
@@ -113,6 +159,19 @@ export default function App() {
           skills: [],
           experience: [],
           education: [],
+          credits: {
+            balance: 10,
+            totalEarned: 10,
+            lastRefillDate: new Date().toISOString(),
+            transactions: [{
+              id: crypto.randomUUID(),
+              type: "earned",
+              amount: 10,
+              reason: "Welcome bonus",
+              createdAt: new Date().toISOString()
+            }],
+            referralCode: Buffer.from(userId).toString("base64").substring(0, 8).toUpperCase(),
+          },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -134,12 +193,31 @@ export default function App() {
       setAlerts(alertsList);
     }, (e) => handleFirestoreError(e, OperationType.LIST, `users/${userId}/jobAlerts`));
 
+    // Sync Interviews
+    const interviewsRef = collection(db, "users", userId, "interviews");
+    const unsubInterviews = onSnapshot(interviewsRef, (snap) => {
+      const list = snap.docs.map(d => d.data() as InterviewSession);
+      setInterviews(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    }, (e) => handleFirestoreError(e, OperationType.LIST, `users/${userId}/interviews`));
+
     return () => {
       unsubProfile();
       unsubSaved();
       unsubAlerts();
+      unsubInterviews();
     };
   }, [user]);
+
+  // Event Listeners
+  useEffect(() => {
+    const handleStartInterview = (e: any) => {
+      setInterviewJob(e.detail.job);
+      setActiveTab("interview");
+    };
+
+    window.addEventListener("hirematch:start-interview", handleStartInterview);
+    return () => window.removeEventListener("hirematch:start-interview", handleStartInterview);
+  }, []);
 
   const handleLogin = async () => {
     try {
@@ -222,7 +300,9 @@ export default function App() {
         resume: parsed,
         updatedAt: new Date().toISOString()
       });
+      setResume(parsed);
       setActiveTab("discovery");
+      toast.success("Resume parsed and indexed!");
       fetchJobs(parsed.inferredDomain || parsed.skills[0] || "Software Engineer", "");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
@@ -239,6 +319,37 @@ export default function App() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const spendCredits = async (amount: number, reason: string): Promise<boolean> => {
+    if (!user || !profile.credits) return false;
+    if (profile.credits.balance < amount) return false;
+
+    try {
+      const userRef = doc(db, "users", user.uid);
+      const updatedCredits = {
+        ...profile.credits,
+        balance: profile.credits.balance - amount,
+        transactions: [
+          ...(profile.credits.transactions || []),
+          {
+            id: crypto.randomUUID(),
+            type: "spent",
+            amount,
+            reason,
+            createdAt: new Date().toISOString()
+          }
+        ].slice(-20)
+      };
+      await updateDoc(userRef, { 
+        credits: updatedCredits,
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error("Failed to spend credits:", error);
+      return false;
     }
   };
 
@@ -280,8 +391,38 @@ export default function App() {
       }
 
       setJobs(results);
+
+      // Check Alerts
+      if (alerts.length > 0) {
+        const activeAlerts = alerts.filter(a => a.isActive);
+        const matches = results.filter(job => {
+          return activeAlerts.some(alert => {
+             const keyMatch = job.title.toLowerCase().includes(alert.keywords.toLowerCase()) || 
+                             job.description.toLowerCase().includes(alert.keywords.toLowerCase());
+             const locMatch = !alert.location || job.location.toLowerCase().includes(alert.location.toLowerCase());
+             return keyMatch && locMatch;
+          });
+        });
+
+        if (matches.length > 0) {
+          toast(`Matching jobs found for your alerts!`, {
+            icon: '🔔',
+            duration: 5000,
+          });
+        }
+
+        // AI Match Check (High score jobs)
+        const highMatches = results.filter(j => j.matchScore && j.matchScore > 85);
+        if (highMatches.length > 0) {
+          toast.success(`Found ${highMatches.length} roles with >85% match for you!`, {
+            duration: 4000,
+          });
+        }
+      }
+
     } catch (error) {
       console.error("Failed to fetch jobs:", error);
+      toast.error("Failed to fetch jobs");
     } finally {
       setLoading(false);
     }
@@ -295,6 +436,26 @@ export default function App() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     fetchJobs(searchQuery, location);
+  };
+
+  const handleSaveInterview = async (debrief: any, job: Job | null) => {
+    if (!user || !job) return;
+    try {
+      const interviewId = crypto.randomUUID();
+      const interviewRef = doc(db, "users", user.uid, "interviews", interviewId);
+      const session: InterviewSession = {
+        id: interviewId,
+        jobId: job.id || "",
+        company: job.company,
+        role: job.title,
+        debrief: debrief,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(interviewRef, session);
+      toast.success("Interview session saved!");
+    } catch (error) {
+      console.error("Failed to save interview:", error);
+    }
   };
 
   if (isAuthLoading) {
@@ -369,6 +530,32 @@ export default function App() {
                 active={activeTab === "alerts"} 
                 onClick={() => setActiveTab("alerts")}
               />
+              <NavItem 
+                icon={<Target className="w-4 h-4" />} 
+                label="Interview AI" 
+                active={activeTab === "interview"} 
+                onClick={() => setActiveTab("interview")}
+              />
+
+              <div className="mt-6 px-3">
+                <div className="bg-slate-50 dark:bg-zinc-800/50 p-4 rounded-xl border border-slate-100 dark:border-zinc-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                       <Zap className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Credits</span>
+                    </div>
+                    <span className="text-xs font-black text-blue-600">{profile.credits?.balance || 0} left</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(((profile.credits?.balance || 0) / 10) * 100, 100)}%` }}
+                      className="h-full bg-blue-600"
+                    />
+                  </div>
+                  <p className="text-[9px] text-slate-400 mt-2 font-medium">Refills in next 24h</p>
+                </div>
+              </div>
             </nav>
 
             <div className="p-6 border-t border-slate-100 dark:border-zinc-800">
@@ -410,7 +597,7 @@ export default function App() {
               <span className="text-slate-400">HireMatch AI</span>
               <span className="text-slate-300">/</span>
               <span className="text-slate-700 dark:text-zinc-200">
-                {activeTab === "discovery" ? "Discovery" : activeTab === "profile" ? "Profile" : activeTab === "saved" ? "Saved" : activeTab === "alerts" ? "Alerts" : "Applications"}
+                {activeTab === "discovery" ? "Discovery" : activeTab === "profile" ? "Profile" : activeTab === "saved" ? "Saved" : activeTab === "alerts" ? "Alerts" : activeTab === "interview" ? "Mock Interview" : "Applications"}
               </span>
             </div>
           </div>
@@ -437,6 +624,21 @@ export default function App() {
               profile={profile} 
               onUpdateProfile={updateProfile} 
               onResumeParsed={handleResumeUpload} 
+            />
+          ) : activeTab === "interview" ? (
+            <MockInterviewRoom 
+              job={interviewJob || (jobs.length > 0 ? jobs[0] : null)}
+              resume={resume}
+              pastInterviews={interviews}
+              onComplete={(debrief) => {
+                handleSaveInterview(debrief, interviewJob || (jobs.length > 0 ? jobs[0] : null));
+              }}
+              onExit={() => {
+                setActiveTab("discovery");
+                setInterviewJob(null);
+              }}
+              onSpendCredits={spendCredits}
+              creditsBalance={profile.credits?.balance || 0}
             />
           ) : activeTab === "saved" ? (
             <div className="max-w-7xl mx-auto space-y-8">
@@ -546,9 +748,12 @@ export default function App() {
         isSaved={selectedJob ? savedJobs.some(j => j.id === selectedJob.id) : false}
         onSave={() => selectedJob && toggleSaveJob(selectedJob)}
         onClose={() => setIsModalOpen(false)} 
+        onSpendCredits={spendCredits}
+        creditsBalance={profile.credits?.balance || 0}
       />
 
       <ChatAssistant profile={profile} />
+      <Toaster position="top-right" />
     </div>
   );
 }

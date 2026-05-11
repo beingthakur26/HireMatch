@@ -13,7 +13,8 @@ import {
   FileText,
   TrendingUp,
   Loader2,
-  Share2
+  Share2,
+  Target
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Job, ParsedResume } from "../types";
@@ -30,9 +31,22 @@ interface JobDetailModalProps {
   onSave?: (job: Job) => void;
   onApplyWithAI?: (job: Job) => void;
   onClose: () => void;
+  onSpendCredits: (amount: number, reason: string) => Promise<boolean>;
+  creditsBalance: number;
 }
 
-export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, onSave, onClose, onApplyWithAI }: JobDetailModalProps) {
+export function JobDetailModal({ 
+  job, 
+  resume, 
+  userSkills = [], 
+  isOpen, 
+  isSaved, 
+  onSave, 
+  onClose, 
+  onApplyWithAI,
+  onSpendCredits,
+  creditsBalance
+}: JobDetailModalProps) {
   const [coverLetter, setCoverLetter] = useState<string | null>(null);
   const [improvements, setImprovements] = useState<any>(null);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
@@ -59,9 +73,19 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
   };
 
   const handleGenerateCoverLetter = async () => {
-    if (!resume) return;
+    if (!resume || !job) return;
+    if (creditsBalance < 2) {
+      alert("Not enough credits. You need 2 credits for this.");
+      return;
+    }
+
     setIsLoadingAI(true);
     try {
+      const success = await onSpendCredits(2, `AI Cover Letter: ${job.title}`);
+      if (!success) {
+        alert("Transaction failed.");
+        return;
+      }
       const letter = await geminiService.generateCoverLetter(resume, job);
       setCoverLetter(letter);
     } catch (error) {
@@ -72,9 +96,19 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
   };
 
   const handleGetImprovements = async () => {
-    if (!resume) return;
+    if (!resume || !job) return;
+    if (creditsBalance < 3) {
+      alert("Not enough credits. You need 3 credits for this.");
+      return;
+    }
+
     setIsLoadingAI(true);
     try {
+      const success = await onSpendCredits(3, `ATS Optimization: ${job.title}`);
+      if (!success) {
+        alert("Transaction failed.");
+        return;
+      }
       const data = await geminiService.getResumeImprovements(resume, job);
       setImprovements(data);
     } catch (error) {
@@ -82,6 +116,11 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
     } finally {
       setIsLoadingAI(false);
     }
+  };
+
+  const handleMockInterview = () => {
+    window.dispatchEvent(new CustomEvent("hirematch:start-interview", { detail: { job } }));
+    onClose();
   };
 
   const handleShare = () => {
@@ -252,7 +291,15 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
                           className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm disabled:opacity-50"
                         >
                           <TrendingUp className="w-4 h-4 text-emerald-500" />
-                          {isLoadingAI ? "Processing..." : "ATS Improvement"}
+                          {isLoadingAI ? "Processing..." : "ATS Improvement (3 pts)"}
+                        </button>
+                        <button 
+                          onClick={handleMockInterview}
+                          disabled={!resume}
+                          className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-all shadow-sm disabled:opacity-50"
+                        >
+                          <Target className="w-4 h-4 text-indigo-500" />
+                          Practice Mock Interview
                         </button>
                       </div>
                     </div>
@@ -409,11 +456,12 @@ export function JobDetailModal({ job, resume, userSkills = [], isOpen, isSaved, 
                   </div>
                   <div className="flex items-center gap-3 w-full sm:w-auto">
                     <button 
-                      onClick={handleApplyWithAI}
+                      onClick={handleGenerateCoverLetter}
+                      disabled={isLoadingAI || !resume}
                       className="flex-1 sm:flex-none px-6 py-4 bg-white border border-slate-200 text-blue-600 font-bold uppercase tracking-widest text-[11px] rounded shadow-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
                     >
                       <Sparkles className="w-4 h-4" />
-                      Apply with AI
+                      {isLoadingAI ? "Processing..." : "Generate Letter (2 pts)"}
                     </button>
                     <a 
                       href={job.sourceUrl} 

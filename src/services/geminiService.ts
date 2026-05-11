@@ -7,7 +7,7 @@ export const geminiService = {
   async parseResume(rawText: string): Promise<ParsedResume> {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `You are an expert ATS (Applicant Tracking System) parser. Parse the following resume text into a highly structured JSON format.
+      contents: [{ role: 'user', parts: [{ text: `You are an expert ATS (Applicant Tracking System) parser. Parse the following resume text into a highly structured JSON format.
       
       CRITICAL INSTRUCTIONS:
       1. Dates: For experience, extract 'startDate' and 'endDate' in 'MM/YYYY' format if possible. 'duration' should be the raw string from the resume (e.g., "Jan 2020 - Present").
@@ -18,7 +18,7 @@ export const geminiService = {
       Resume Text:
       """
       ${rawText}
-      """`,
+      """` }] }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -106,13 +106,13 @@ export const geminiService = {
   async scoreJobMatch(resume: ParsedResume, job: Job) {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Score the match between this resume and job description.
+      contents: [{ role: 'user', parts: [{ text: `Score the match between this resume and job description.
       
       RESUME:
       ${JSON.stringify(resume)}
       
       JOB:
-      ${JSON.stringify(job)}`,
+      ${JSON.stringify(job)}` }] }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -138,7 +138,7 @@ export const geminiService = {
   async getResumeImprovements(resume: ParsedResume, job: Job) {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `You are a world-class ATS (Applicant Tracking System) Specialist and Career Coach. 
+      contents: [{ role: 'user', parts: [{ text: `You are a world-class ATS (Applicant Tracking System) Specialist and Career Coach. 
       Analyze the provided Resume against the Job Description to provide high-impact, actionable optimization advice.
       
       FOCUS AREAS:
@@ -148,7 +148,7 @@ export const geminiService = {
       4. Summary/Objective: Refine it to align with the employer's value proposition.
 
       RESUME: ${JSON.stringify(resume)}
-      JOB: ${JSON.stringify(job)}`,
+      JOB: ${JSON.stringify(job)}` }] }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -186,10 +186,82 @@ export const geminiService = {
   async generateCoverLetter(resume: ParsedResume, job: Job) {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Write a 3-paragraph professional cover letter for ${resume.name} applying to ${job.title} at ${job.company}. 
+      contents: [{ role: 'user', parts: [{ text: `Write a 3-paragraph professional cover letter for ${resume.name} applying to ${job.title} at ${job.company}. 
       Use these resume details: ${JSON.stringify(resume)}. 
-      Return ONLY the letter text.`,
+      Return ONLY the letter text.` }] }],
     });
     return response.text.trim();
   },
+
+  async startInterview(resume: ParsedResume, job: Job) {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: 'user', parts: [{ text: `You are a senior interviewer at ${job.company}. You are interviewing ${resume.name} for the position of ${job.title}.
+      
+      CANDIDATE INFO:
+      ${JSON.stringify(resume)}
+      
+      JOB DESCRIPTION:
+      ${JSON.stringify(job)}
+      
+      RULES:
+      1. Be professional and encouraging.
+      2. Start with a brief greeting and one introductory question.
+      3. Do NOT reveal your internal logic.
+      4. Ask one question at a time.
+      
+      Begin the interview.` }] }],
+    });
+    return response.text.trim();
+  },
+
+  async continueInterview(resume: ParsedResume, job: Job, history: { role: "user" | "model", parts: { text: string }[] }[]) {
+     const chat = ai.chats.create({
+       model: "gemini-3-flash-preview",
+       config: {
+         systemInstruction: `You are a senior interviewer at ${job.company}. You are interviewing ${resume.name} for the position of ${job.title}.
+       Ask one question at a time. If the interview should end, provide a brief closing statement and say "INTERVIEW_OVER".`
+       },
+       history: history.slice(0, -1).map(h => ({
+         role: h.role,
+         parts: h.parts
+       }))
+     });
+
+     const lastMessage = history[history.length - 1].parts[0].text;
+     const result = await chat.sendMessage({ message: lastMessage });
+     return result.text;
+  },
+
+  async evaluateInterview(history: any[]) {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: 'user', parts: [{ text: `Evaluate this interview transcript between an AI interviewer and a candidate.
+      
+      TRANSCRIPT:
+      ${JSON.stringify(history)}
+      
+      Provide a detailed evaluation in JSON format.` }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            overallScore: { type: Type.NUMBER },
+            strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+            weaknesses: { type: Type.ARRAY, items: { type: Type.STRING } },
+            tips: { type: Type.ARRAY, items: { type: Type.STRING } },
+            verdict: { type: Type.STRING }
+          },
+          required: ["overallScore", "strengths", "weaknesses", "tips", "verdict"]
+        }
+      }
+    });
+
+    try {
+      return JSON.parse(response.text.trim());
+    } catch (e) {
+      return { overallScore: 0, strengths: [], weaknesses: [], tips: [], verdict: "Evaluation failed" };
+    }
+  }
 };

@@ -88,6 +88,29 @@ export interface UserEducation {
   year: string;
 }
 
+export interface CreditTransaction {
+  id: string;
+  type: "earned" | "spent" | "bonus";
+  amount: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface InterviewSession {
+  id: string;
+  jobId: string;
+  company: string;
+  role: string;
+  debrief: {
+    overallScore: number;
+    strengths: string[];
+    weaknesses: string[];
+    tips: string[];
+    verdict: string;
+  };
+  createdAt: string;
+}
+
 export interface UserProfile {
   userId: string;
   name: string;
@@ -100,6 +123,13 @@ export interface UserProfile {
   education: UserEducation[];
   profilePicture?: string;
   resume?: ParsedResume;
+  credits: {
+    balance: number;
+    totalEarned: number;
+    lastRefillDate: string;
+    transactions: CreditTransaction[];
+    referralCode?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
